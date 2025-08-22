@@ -38,9 +38,9 @@ def get_gmail_service(log_file, run_uuid, user, script_start_time):
         else:
             flow = InstalledAppFlow.from_client_secrets_file(str(CREDENTIALS_FILE), SCOPES)
             creds = flow.run_local_server(port=0)
-        with open(TOKEN_FILE, 'w') as token:
-            token.write(creds.to_json())
-        os.chmod(TOKEN_FILE, 0o600)
+            with open(TOKEN_FILE, 'w') as token:
+                token.write(creds.to_json())
+            os.chmod(TOKEN_FILE, 0o600)
     try:
         service = build('gmail', 'v1', credentials=creds)
         log_message(log_file, "Auth", "Gmail API authenticated successfully", run_uuid=run_uuid, stepcounter="Auth_0", user=user, script_start_time=script_start_time)
@@ -56,7 +56,7 @@ def get_or_create_label(service, label_name, log_file, run_uuid, user, script_st
         for label in labels:
             if label['name'].upper() == label_name.upper():
                 return label['id']
-            # Create if not found
+        # Create if not found
         new_label = service.users().labels().create(userId='me', body={'name': label_name, 'labelListVisibility': 'labelShow', 'messageListVisibility': 'show'}).execute()
         log_message(log_file, "Label", f"Created label {label_name} with ID {new_label['id']}", run_uuid=run_uuid, stepcounter="Label_Create", user=user, script_start_time=script_start_time)
         return new_label['id']
@@ -80,31 +80,36 @@ def fetch_configs(log_file, run_uuid, user, script_start_time):
         log_message(log_file, "Error", f"Failed to fetch configs: {str(e)}", run_uuid=run_uuid, stepcounter="ConfigFetch_1", user=user, script_start_time=script_start_time)
         return []
 
-def email_matches_config(message, config):
+def email_matches_config(message, config, log_file, run_uuid, user, script_start_time):
     subject = next((header['value'] for header in message['payload']['headers'] if header['name'].lower() == 'subject'), '')
+    log_message(log_file, "Debug", f"Evaluating email {message['id']} with subject: '{subject}'", run_uuid=run_uuid, stepcounter=f"Check_{message['id']}_Subject", user=user, script_start_time=script_start_time)
     if config['subject_pattern'] and not re.search(config['subject_pattern'], subject, re.IGNORECASE):
+        log_message(log_file, "Debug", f"Subject '{subject}' does not match pattern '{config['subject_pattern']}'", run_uuid=run_uuid, stepcounter=f"Check_{message['id']}_SubjectMismatch", user=user, script_start_time=script_start_time)
         return False
-
     has_matching_attachment = False
     if 'parts' in message['payload']:
         for part in message['payload']['parts']:
             if part.get('filename'):
+                filename = part['filename']
+                log_message(log_file, "Debug", f"Found attachment for email {message['id']}: '{filename}'", run_uuid=run_uuid, stepcounter=f"Check_{message['id']}_Attachment", user=user, script_start_time=script_start_time)
                 if config['attachment_pattern']:
-                    if re.search(config['attachment_pattern'], part['filename'], re.IGNORECASE):
+                    if re.search(config['attachment_pattern'], filename, re.IGNORECASE):
+                        log_message(log_file, "Debug", f"Attachment '{filename}' matches pattern '{config['attachment_pattern']}'", run_uuid=run_uuid, stepcounter=f"Check_{message['id']}_AttachmentMatch", user=user, script_start_time=script_start_time)
                         has_matching_attachment = True
                         break
+                    else:
+                        log_message(log_file, "Debug", f"Attachment '{filename}' does not match pattern '{config['attachment_pattern']}'", run_uuid=run_uuid, stepcounter=f"Check_{message['id']}_AttachmentMismatch", user=user, script_start_time=script_start_time)
                 else:
                     has_matching_attachment = True
                     break
-    
     if config['has_attachment'] and not has_matching_attachment:
+        log_message(log_file, "Debug", f"No matching attachment found for pattern '{config['attachment_pattern']}'", run_uuid=run_uuid, stepcounter=f"Check_{message['id']}_NoAttachment", user=user, script_start_time=script_start_time)
         return False
-
+    log_message(log_file, "Debug", f"Email {message['id']} matches config {config['id']}", run_uuid=run_uuid, stepcounter=f"Check_{message['id']}_Match", user=user, script_start_time=script_start_time)
     return True
 
 def process_email(service, msg_id, config, processed_label_id, log_file, run_uuid, user, script_start_time):
     message = service.users().messages().get(userId='me', id=msg_id, format='full').execute()
-    
     # Get sent date from headers (fallback to today if missing/invalid)
     sent_date_str = next((header['value'] for header in message['payload']['headers'] if header['name'].lower() == 'date'), None)
     try:
@@ -112,7 +117,6 @@ def process_email(service, msg_id, config, processed_label_id, log_file, run_uui
         date_str = sent_date.strftime("%Y%m%d")
     except ValueError:
         date_str = datetime.now().strftime("%Y%m%d")
-    
     # Download raw email as .eml
     raw_msg = service.users().messages().get(userId='me', id=msg_id, format='raw').execute()
     raw_bytes = base64.urlsafe_b64decode(raw_msg['raw'])
@@ -120,7 +124,6 @@ def process_email(service, msg_id, config, processed_label_id, log_file, run_uui
     with open(eml_path, 'wb') as f:
         f.write(raw_bytes)
     os.chmod(eml_path, 0o660)
-
     # Download matching attachments
     if 'parts' in message['payload']:
         for part in message['payload']['parts']:
@@ -133,13 +136,11 @@ def process_email(service, msg_id, config, processed_label_id, log_file, run_uui
                         att_id = part['body']['attachmentId']
                         att = service.users().messages().attachments().get(userId='me', messageId=msg_id, id=att_id).execute()
                         data = att['data']
-                    
                     file_bytes = base64.urlsafe_b64decode(data)
                     att_path = Path(config['local_path']) / f"{date_str}_{filename}"
                     with open(att_path, 'wb') as f:
                         f.write(file_bytes)
                     os.chmod(att_path, 0o660)
-
     # Move to Processed
     service.users().messages().modify(userId='me', id=msg_id, body={'removeLabelIds': ['INBOX'], 'addLabelIds': [processed_label_id]}).execute()
     log_message(log_file, "Process", f"Processed email {msg_id}: Saved .eml and attachments to {config['local_path']}", run_uuid=run_uuid, stepcounter=f"Email_{msg_id}", user=user, script_start_time=script_start_time)
@@ -150,37 +151,29 @@ def gmail_inbox_processor():
     user = get_username()
     timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
     log_file = Path.home() / 'client_etl_workflow' / 'logs' / f"gmail_inbox_processor_{timestamp}"
-    
     log_message(log_file, "Initialization", f"Script started at {timestamp}", run_uuid=run_uuid, stepcounter="Init_0", user=user, script_start_time=script_start_time)
-    
     service = get_gmail_service(log_file, run_uuid, user, script_start_time)
     if not service:
         return
-    
     processed_id = get_or_create_label(service, PROCESSED_LABEL, log_file, run_uuid, user, script_start_time)
     error_id = get_or_create_label(service, ERROR_LABEL, log_file, run_uuid, user, script_start_time)
     if not processed_id or not error_id:
         return
-    
     configs = fetch_configs(log_file, run_uuid, user, script_start_time)
     if not configs:
         log_message(log_file, "Warning", "No active inbox configurations found.", run_uuid=run_uuid, stepcounter="Config_Warning", user=user, script_start_time=script_start_time)
-
     try:
         results = service.users().messages().list(userId='me', q='in:inbox').execute()
         messages = results.get('messages', [])
         log_message(log_file, "Search", f"Found {len(messages)} emails in inbox.", run_uuid=run_uuid, stepcounter="Inbox_Search", user=user, script_start_time=script_start_time)
-
         for msg in messages:
             msg_id = msg['id']
             message_details = service.users().messages().get(userId='me', id=msg_id, format='full').execute()
-            
             matched_config = None
             for config in configs:
-                if email_matches_config(message_details, config):
+                if email_matches_config(message_details, config, log_file, run_uuid, user, script_start_time):
                     matched_config = config
                     break
-            
             try:
                 if matched_config:
                     process_email(service, msg_id, matched_config, processed_id, log_file, run_uuid, user, script_start_time)
@@ -194,10 +187,8 @@ def gmail_inbox_processor():
                     service.users().messages().modify(userId='me', id=msg_id, body={'removeLabelIds': ['INBOX'], 'addLabelIds': [error_id]}).execute()
                 except Exception as move_e:
                     log_message(log_file, "Error", f"Failed to move email {msg_id} to ErrorFolder after processing error: {str(move_e)}", run_uuid=run_uuid, stepcounter=f"Email_{msg_id}_MoveError", user=user, script_start_time=script_start_time)
-
     except HttpError as e:
         log_message(log_file, "Error", f"Failed to list inbox messages: {str(e)}", run_uuid=run_uuid, stepcounter="Inbox_Search_Error", user=user, script_start_time=script_start_time)
-    
     log_message(log_file, "Finalization", "Script completed", run_uuid=run_uuid, stepcounter="Final_0", user=user, script_start_time=script_start_time)
 
 if __name__ == "__main__":
