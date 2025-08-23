@@ -538,7 +538,7 @@ def generic_import(config_id):
         date_string = parse_metadata(filename, config, config["dateconfig"], config["datelocation"], config["delimiter"], log_file, run_uuid, user, script_start_time)
         if date_string:
             try:
-                dataset_date = datetime.strptime(date_string, '%Y%m%dT%H%M%S').date()
+                dataset_date = datetime.strptime(date_string, config['dateformat']).date()
                 log_message(log_file, "Processing", f"Parsed dataset_date {dataset_date} from filename '{filename}'",
                             run_uuid=run_uuid, stepcounter=f"File_{filename}_Date", user=user, script_start_time=script_start_time)
             except ValueError as e:
