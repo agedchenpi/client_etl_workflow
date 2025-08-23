@@ -187,8 +187,8 @@ def get_column_lengths(df):
         # Replace NaN/None with empty string to avoid underestimation
         series = df[col].fillna('').astype(str)
         max_length = series.str.len().max()
-        # Apply a 1.5x safety margin, cap at 4000 to avoid excessive lengths
-        safe_length = min(int(max_length * 1.5) if not pd.isna(max_length) else 255, 4000)
+        # Apply a 1.5x safety margin, ensure min 1, cap at 4000
+        safe_length = max(1, min(int(max_length * 1.5) if not pd.isna(max_length) else 255, 4000))
         lengths[col] = safe_length
     return lengths
 
@@ -233,7 +233,6 @@ def ensure_lookup_ids(cursor, datasource, dataset_type, user, log_file, run_uuid
             datasource_id = cursor.fetchone()[0]
         log_message(log_file, "LookupInsert", f"Ensured datasource {datasource} with datasourceid {datasource_id}",
                     run_uuid=run_uuid, stepcounter="LookupInsert_0", user=user, script_start_time=script_start_time)
-
         # Ensure datasettype exists
         cursor.execute("""
             INSERT INTO dba.tdatasettype (typename, createddate, createdby)
@@ -253,7 +252,6 @@ def ensure_lookup_ids(cursor, datasource, dataset_type, user, log_file, run_uuid
             dataset_type_id = cursor.fetchone()[0]
         log_message(log_file, "LookupInsert", f"Ensured datasettype {dataset_type} with datasettypeid {dataset_type_id}",
                     run_uuid=run_uuid, stepcounter="LookupInsert_1", user=user, script_start_time=script_start_time)
-
         return datasource_id, dataset_type_id
     except psycopg2.Error as e:
         log_message(log_file, "Error", f"Failed to ensure lookup IDs: {str(e)}",
@@ -322,12 +320,10 @@ def add_columns_to_table(cursor, table_name, new_columns, column_lengths, log_fi
     try:
         # Get current column lengths
         existing_lengths = get_table_column_lengths(cursor, table_name, log_file, run_uuid, user, script_start_time)
-        
         for column in new_columns:
             column_lower = column.lower().replace(' ', '_').replace('-', '_')
             required_length = min(column_lengths.get(column, 1000), 4000)  # Default to 1000, cap at 4000
             existing_length = existing_lengths.get(column_lower)
-            
             if existing_length is None:
                 # Add new column
                 cursor.execute(f"""
@@ -387,21 +383,18 @@ def load_data_to_postgres(df, target_table, dataset_id, metadata_label, event_da
                 table_column_lengths = get_table_column_lengths(cur, target_table, log_file, run_uuid, user, script_start_time)
                 log_message(log_file, "DataLoadPrep", f"Table columns for {target_table}: {', '.join(table_columns)}",
                             run_uuid=run_uuid, stepcounter="DataLoadPrep_0", user=user, script_start_time=script_start_time)
-                
                 # Convert DataFrame column names to lowercase
                 column_map = {col: col.lower().replace(' ', '_').replace('-', '_') for col in df.columns}
                 df = df.rename(columns=column_map)
                 df_columns = list(df.columns)
                 log_message(log_file, "DataLoadPrep", f"Source columns after lowercase: {', '.join(df_columns)}",
                             run_uuid=run_uuid, stepcounter="DataLoadPrep_1", user=user, script_start_time=script_start_time)
-                
                 # Add datasetid (mandatory), and metadata/date only if columns exist in table
                 df["datasetid"] = dataset_id
                 if metadata_label and "metadata_label" in table_columns_lower:
                     df["metadata_label"] = metadata_label
                 if event_date and "event_date" in table_columns_lower:
                     df["event_date"] = event_date
-                
                 # Filter DataFrame to match table columns (case-insensitive)
                 matching_columns = []
                 column_mapping = {}
@@ -412,17 +405,13 @@ def load_data_to_postgres(df, target_table, dataset_id, metadata_label, event_da
                             matching_columns.append(col)
                             column_mapping[col] = table_col
                             break
-                
                 if not matching_columns:
                     log_message(log_file, "Error", f"No matching columns between source ({', '.join(df.columns)}) and table ({', '.join(table_columns)})",
                                 run_uuid=run_uuid, stepcounter="DataLoad_2", user=user, script_start_time=script_start_time)
                     return False
-                
                 log_message(log_file, "DataLoadPrep", f"Matching columns after mapping: {', '.join(matching_columns)}",
                             run_uuid=run_uuid, stepcounter="DataLoadPrep_2", user=user, script_start_time=script_start_time)
-                
                 df = df[matching_columns].rename(columns=column_mapping)
-                
                 # Update table schema with new columns
                 new_columns = [col for col in df_columns if col.lower() not in [tc.lower() for tc in table_columns]]
                 if new_columns and config["importstrategyid"] == 1:
@@ -432,7 +421,6 @@ def load_data_to_postgres(df, target_table, dataset_id, metadata_label, event_da
                                     run_uuid=run_uuid, stepcounter="DataLoadPrep_3", user=user, script_start_time=script_start_time)
                         return False
                     conn.commit()
-                
                 # Check if DataFrame is empty
                 if df.empty:
                     log_message(log_file, "Warning", f"CSV contains headers but no data rows for {target_table}. Columns processed: {', '.join(df.columns)}. Marking dataset as 'Empty'.",
@@ -441,7 +429,6 @@ def load_data_to_postgres(df, target_table, dataset_id, metadata_label, event_da
                         return False
                     conn.commit()
                     return True
-                
                 # Truncate values to fit column lengths
                 for col in df.columns:
                     col_lower = col.lower()
@@ -454,7 +441,6 @@ def load_data_to_postgres(df, target_table, dataset_id, metadata_label, event_da
                         if not long_values.empty:
                             log_message(log_file, "Warning", f"Truncated {len(long_values)} values in column {col} to {max_length} characters",
                                         run_uuid=run_uuid, stepcounter=f"DataLoad_Truncate_{col}", user=user, script_start_time=script_start_time)
-                
                 # Convert DataFrame to list of tuples
                 records = [tuple(row) for row in df.to_numpy()]
                 if not records:
@@ -464,14 +450,12 @@ def load_data_to_postgres(df, target_table, dataset_id, metadata_label, event_da
                         return False
                     conn.commit()
                     return True
-                
                 # Prepare insert query
                 placeholders = ",".join(["%s"] * len(df.columns))
                 insert_query = f"""
                     INSERT INTO {target_table} ({','.join(f'"{col}"' for col in df.columns)})
                     VALUES ({placeholders})
                 """
-                
                 # Execute insert
                 log_message(log_file, "DataLoadPrep", f"Executing INSERT query for {len(records)} records into {target_table}",
                             run_uuid=run_uuid, stepcounter="DataLoadPrep_4", user=user, script_start_time=script_start_time)
@@ -496,7 +480,6 @@ def generic_import(config_id):
     user = get_username()
     timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
     log_file = LOG_DIR / f"generic_import_{timestamp}"
-
     try:
         ensure_directory_exists(LOG_DIR)
         log_message(log_file, "Initialization", f"Script started at {timestamp} for config_id {config_id}",
@@ -504,19 +487,15 @@ def generic_import(config_id):
     except Exception as e:
         print(f"Error initializing log directory: {str(e)}")
         sys.exit(1)
-
     config = get_config(config_id, log_file, run_uuid, user, script_start_time)
     if not config:
         log_message(log_file, "Error", "Failed to retrieve configuration. Exiting.",
                     run_uuid=run_uuid, stepcounter="Initialization_1", user=user, script_start_time=script_start_time)
         return
-
     log_message(log_file, "Initialization", f"Configuration loaded: {config['config_name']}",
                 run_uuid=run_uuid, stepcounter="Initialization_2", user=user, script_start_time=script_start_time)
-
     ensure_directory_exists(config["source_directory"])
     ensure_directory_exists(config["archive_directory"])
-
     files = []
     try:
         regex_pattern = config["file_pattern"].replace('\\\\', '\\')
@@ -524,7 +503,6 @@ def generic_import(config_id):
         all_files = os.listdir(config["source_directory"])
         log_message(log_file, "FileSearch", f"Files in {config['source_directory']}: {', '.join(all_files)}",
                     run_uuid=run_uuid, stepcounter="FileSearch_0", user=user, script_start_time=script_start_time)
-        
         for filename in all_files:
             if pattern.match(filename):
                 full_path = os.path.join(config["source_directory"], filename)
@@ -535,12 +513,10 @@ def generic_import(config_id):
             else:
                 log_message(log_file, "FileSearch", f"File {filename} does not match pattern {regex_pattern}",
                             run_uuid=run_uuid, stepcounter=f"FileSearch_NoMatch_{filename}", user=user, script_start_time=script_start_time)
-        
         if not files:
             log_message(log_file, "Warning", f"No files found matching pattern {regex_pattern} in {config['source_directory']}",
                         run_uuid=run_uuid, stepcounter="FileSearch_1", user=user, script_start_time=script_start_time)
             return
-        
         log_message(log_file, "Processing", f"Found {len(files)} files to process: {', '.join(os.path.basename(f) for f in files)}",
                     run_uuid=run_uuid, stepcounter="FileSearch_2", user=user, script_start_time=script_start_time)
     except re.error as e:
@@ -551,7 +527,6 @@ def generic_import(config_id):
         log_message(log_file, "Error", f"Unexpected error in file search: {str(e)}\n{traceback.format_exc()}",
                     run_uuid=run_uuid, stepcounter="FileSearch_4", user=user, script_start_time=script_start_time)
         return
-
     success = True
     dataset_ids = []
     for file_path in files:
@@ -559,7 +534,6 @@ def generic_import(config_id):
         file_success = True
         log_message(log_file, "Processing", f"Processing file: {filename}",
                     run_uuid=run_uuid, stepcounter=f"File_{filename}_0", user=user, script_start_time=script_start_time)
-
         # Parse date from filename
         date_string = parse_metadata(filename, config, config["dateconfig"], config["datelocation"], config["delimiter"], log_file, run_uuid, user, script_start_time)
         if date_string:
@@ -573,12 +547,10 @@ def generic_import(config_id):
                 dataset_date = datetime.now().date()
         else:
             dataset_date = datetime.now().date()
-
         # Parse label
         label = parse_metadata(filename, config, config["metadata_label_source"], config["metadata_label_location"], config["delimiter"], log_file, run_uuid, user, script_start_time)
         if not label:
             label = config["config_name"]
-
         with psycopg2.connect(**DB_PARAMS) as conn:
             with conn.cursor() as cur:
                 try:
@@ -589,7 +561,6 @@ def generic_import(config_id):
                         success = False
                         file_success = False
                         continue
-
                     dataset_id = insert_dataset(cur, config["config_name"], dataset_date, label, datasource_id, dataset_type_id, log_file, run_uuid, user, script_start_time)
                     if not dataset_id:
                         log_message(log_file, "Error", f"Failed to create dataset for file {filename}. Skipping.",
@@ -599,7 +570,6 @@ def generic_import(config_id):
                         continue
                     dataset_ids.append((dataset_id, datasource_id, dataset_type_id, label, dataset_date))
                     conn.commit()
-
                     update_dataset_status(cur, dataset_id, datasource_id, dataset_type_id, label, dataset_date, log_file, run_uuid, user, script_start_time)
                     conn.commit()
                 except Exception as e:
@@ -608,7 +578,6 @@ def generic_import(config_id):
                     success = False
                     file_success = False
                     continue
-
         # Check if the file is an 'Invalid Event ID' file or unreadable
         if config["file_type"] in ["XLS", "XLSX"]:
             is_invalid, is_readable = is_invalid_event_file(file_path, log_file, run_uuid, user, script_start_time)
@@ -638,32 +607,30 @@ def generic_import(config_id):
                                 file_success = False
                         conn.commit()
                 continue
-
         csv_path = file_path
         if config["file_type"] in ["XLS", "XLSX"]:
             csv_path = os.path.splitext(file_path)[0] + '.csv'
-            try:
-                log_message(log_file, "Debug", f"Calling xls_to_csv for {file_path}, expected CSV: {csv_path}",
-                            run_uuid=run_uuid, stepcounter=f"File_{filename}_XLS2CSV_0", user=user, script_start_time=script_start_time)
-                os.environ["PARENT_LOG_FILE"] = str(log_file)
-                xls_to_csv(file_path)
-                log_message(log_file, "Debug", f"Finished xls_to_csv call for {file_path}",
-                            run_uuid=run_uuid, stepcounter=f"File_{filename}_XLS2CSV_1", user=user, script_start_time=script_start_time)
-                if not os.path.exists(csv_path):
-                    log_message(log_file, "Error", f"CSV not found at {csv_path} after xls_to_csv for {filename}",
-                                run_uuid=run_uuid, stepcounter=f"File_{filename}_4", user=user, script_start_time=script_start_time)
-                    success = False
-                    file_success = False
-                    continue
-                log_message(log_file, "Conversion", f"Converted {filename} to {csv_path}",
-                            run_uuid=run_uuid, stepcounter=f"File_{filename}_5", user=user, script_start_time=script_start_time)
-            except Exception as e:
-                log_message(log_file, "Error", f"Conversion error for {filename}: {str(e)}\n{traceback.format_exc()}",
-                            run_uuid=run_uuid, stepcounter=f"File_{filename}_6", user=user, script_start_time=script_start_time)
+        try:
+            log_message(log_file, "Debug", f"Calling xls_to_csv for {file_path}, expected CSV: {csv_path}",
+                        run_uuid=run_uuid, stepcounter=f"File_{filename}_XLS2CSV_0", user=user, script_start_time=script_start_time)
+            os.environ["PARENT_LOG_FILE"] = str(log_file)
+            xls_to_csv(file_path)
+            log_message(log_file, "Debug", f"Finished xls_to_csv call for {file_path}",
+                        run_uuid=run_uuid, stepcounter=f"File_{filename}_XLS2CSV_1", user=user, script_start_time=script_start_time)
+            if not os.path.exists(csv_path):
+                log_message(log_file, "Error", f"CSV not found at {csv_path} after xls_to_csv for {filename}",
+                            run_uuid=run_uuid, stepcounter=f"File_{filename}_4", user=user, script_start_time=script_start_time)
                 success = False
                 file_success = False
                 continue
-
+            log_message(log_file, "Conversion", f"Converted {filename} to {csv_path}",
+                        run_uuid=run_uuid, stepcounter=f"File_{filename}_5", user=user, script_start_time=script_start_time)
+        except Exception as e:
+            log_message(log_file, "Error", f"Conversion error for {filename}: {str(e)}\n{traceback.format_exc()}",
+                        run_uuid=run_uuid, stepcounter=f"File_{filename}_6", user=user, script_start_time=script_start_time)
+            success = False
+            file_success = False
+            continue
         try:
             df = pd.read_csv(csv_path)
             if df.empty and df.columns.empty:
@@ -704,14 +671,12 @@ def generic_import(config_id):
                 continue
             log_message(log_file, "Processing", f"Read {len(df)} rows from {csv_path} with columns: {', '.join(df.columns)}",
                         run_uuid=run_uuid, stepcounter=f"File_{filename}_7", user=user, script_start_time=script_start_time)
-            
             # Validate data for long values
             column_lengths = get_column_lengths(df)
             for col, length in column_lengths.items():
                 if length > 1000:
                     log_message(log_file, "Warning", f"Column {col} has maximum length {length} exceeding 1000 characters. Values may be truncated.",
                                 run_uuid=run_uuid, stepcounter=f"File_{filename}_Validate_{col}", user=user, script_start_time=script_start_time)
-            
             log_message(log_file, "Processing", f"Computed column lengths: {column_lengths}",
                         run_uuid=run_uuid, stepcounter=f"File_{filename}_9", user=user, script_start_time=script_start_time)
         except Exception as e:
@@ -722,7 +687,6 @@ def generic_import(config_id):
             if csv_path != file_path and os.path.exists(csv_path):
                 os.remove(csv_path)
             continue
-
         with psycopg2.connect(**DB_PARAMS) as conn:
             with conn.cursor() as cur:
                 try:
@@ -776,7 +740,7 @@ def generic_import(config_id):
                     log_message(log_file, "Processing", f"Calling load_data_to_postgres for {filename} with dataset_id {dataset_id}",
                                 run_uuid=run_uuid, stepcounter=f"File_{filename}_11", user=user, script_start_time=script_start_time)
                     if load_data_to_postgres(df, config["target_table"], dataset_id, metadata_label, event_date,
-                                            log_file, run_uuid, user, script_start_time):
+                                             log_file, run_uuid, user, script_start_time):
                         archive_path = os.path.join(config["archive_directory"], filename)
                         try:
                             shutil.move(file_path, archive_path)
