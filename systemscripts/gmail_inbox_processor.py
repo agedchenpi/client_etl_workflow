@@ -17,16 +17,14 @@ from systemscripts.db_config import DB_PARAMS
 from systemscripts.log_utils import log_message
 from systemscripts.directory_management import ensure_directory_exists
 from systemscripts.user_utils import get_username
-
 # Constants
-SCOPES = ['https://mail.google.com/']  # Full access (includes modify/labels)
+SCOPES = ['https://mail.google.com/'] # Full access (includes modify/labels)
 CREDENTIALS_FILE = Path(__file__).parent / 'credentials.json'
 TOKEN_FILE = Path(__file__).parent / 'token.json'
 PROCESSED_LABEL = 'Processed'
 ERROR_LABEL = 'ErrorFolder'
 MAX_RETRIES = 3
 INITIAL_DELAY = 5.0
-
 def get_gmail_service(log_file, run_uuid, user, script_start_time):
     """Authenticate and return Gmail API service."""
     creds = None
@@ -38,9 +36,9 @@ def get_gmail_service(log_file, run_uuid, user, script_start_time):
         else:
             flow = InstalledAppFlow.from_client_secrets_file(str(CREDENTIALS_FILE), SCOPES)
             creds = flow.run_local_server(port=0)
-            with open(TOKEN_FILE, 'w') as token:
-                token.write(creds.to_json())
-            os.chmod(TOKEN_FILE, 0o600)
+        with open(TOKEN_FILE, 'w') as token:
+            token.write(creds.to_json())
+        os.chmod(TOKEN_FILE, 0o600)
     try:
         service = build('gmail', 'v1', credentials=creds)
         log_message(log_file, "Auth", "Gmail API authenticated successfully", run_uuid=run_uuid, stepcounter="Auth_0", user=user, script_start_time=script_start_time)
@@ -48,7 +46,6 @@ def get_gmail_service(log_file, run_uuid, user, script_start_time):
     except HttpError as e:
         log_message(log_file, "Error", f"Gmail API authentication failed: {str(e)}", run_uuid=run_uuid, stepcounter="Auth_1", user=user, script_start_time=script_start_time)
         return None
-
 def get_or_create_label(service, label_name, log_file, run_uuid, user, script_start_time):
     """Get label ID, create if not exists."""
     try:
@@ -63,7 +60,6 @@ def get_or_create_label(service, label_name, log_file, run_uuid, user, script_st
     except HttpError as e:
         log_message(log_file, "Error", f"Failed to get/create label {label_name}: {str(e)}", run_uuid=run_uuid, stepcounter="Label_Error", user=user, script_start_time=script_start_time)
         return None
-
 def fetch_configs(log_file, run_uuid, user, script_start_time):
     try:
         with psycopg2.connect(**DB_PARAMS) as conn:
@@ -79,7 +75,6 @@ def fetch_configs(log_file, run_uuid, user, script_start_time):
     except psycopg2.Error as e:
         log_message(log_file, "Error", f"Failed to fetch configs: {str(e)}", run_uuid=run_uuid, stepcounter="ConfigFetch_1", user=user, script_start_time=script_start_time)
         return []
-
 def email_matches_config(message, config, log_file, run_uuid, user, script_start_time):
     subject = next((header['value'] for header in message['payload']['headers'] if header['name'].lower() == 'subject'), '')
     log_message(log_file, "Debug", f"Evaluating email {message['id']} with subject: '{subject}'", run_uuid=run_uuid, stepcounter=f"Check_{message['id']}_Subject", user=user, script_start_time=script_start_time)
@@ -107,7 +102,6 @@ def email_matches_config(message, config, log_file, run_uuid, user, script_start
         return False
     log_message(log_file, "Debug", f"Email {message['id']} matches config {config['id']}", run_uuid=run_uuid, stepcounter=f"Check_{message['id']}_Match", user=user, script_start_time=script_start_time)
     return True
-
 def process_email(service, msg_id, config, processed_label_id, log_file, run_uuid, user, script_start_time):
     message = service.users().messages().get(userId='me', id=msg_id, format='full').execute()
     # Get sent date from headers (fallback to today if missing/invalid)
@@ -120,7 +114,8 @@ def process_email(service, msg_id, config, processed_label_id, log_file, run_uui
     # Download raw email as .eml
     raw_msg = service.users().messages().get(userId='me', id=msg_id, format='raw').execute()
     raw_bytes = base64.urlsafe_b64decode(raw_msg['raw'])
-    eml_path = Path(config['local_path']) / f"{date_str}_{msg_id}.eml"
+    # eml_path = Path(config['local_path']) / f"{date_str}_{msg_id}.eml"  # Commented out prefix addition
+    eml_path = Path(config['local_path']) / f"{msg_id}.eml"
     with open(eml_path, 'wb') as f:
         f.write(raw_bytes)
     os.chmod(eml_path, 0o660)
@@ -137,14 +132,14 @@ def process_email(service, msg_id, config, processed_label_id, log_file, run_uui
                         att = service.users().messages().attachments().get(userId='me', messageId=msg_id, id=att_id).execute()
                         data = att['data']
                     file_bytes = base64.urlsafe_b64decode(data)
-                    att_path = Path(config['local_path']) / f"{date_str}_{filename}"
+                    # att_path = Path(config['local_path']) / f"{date_str}_{filename}"  # Commented out prefix addition
+                    att_path = Path(config['local_path']) / filename
                     with open(att_path, 'wb') as f:
                         f.write(file_bytes)
                     os.chmod(att_path, 0o660)
     # Move to Processed
     service.users().messages().modify(userId='me', id=msg_id, body={'removeLabelIds': ['INBOX'], 'addLabelIds': [processed_label_id]}).execute()
     log_message(log_file, "Process", f"Processed email {msg_id}: Saved .eml and attachments to {config['local_path']}", run_uuid=run_uuid, stepcounter=f"Email_{msg_id}", user=user, script_start_time=script_start_time)
-
 def gmail_inbox_processor():
     script_start_time = time.time()
     run_uuid = str(uuid.uuid4())
@@ -190,6 +185,5 @@ def gmail_inbox_processor():
     except HttpError as e:
         log_message(log_file, "Error", f"Failed to list inbox messages: {str(e)}", run_uuid=run_uuid, stepcounter="Inbox_Search_Error", user=user, script_start_time=script_start_time)
     log_message(log_file, "Finalization", "Script completed", run_uuid=run_uuid, stepcounter="Final_0", user=user, script_start_time=script_start_time)
-
 if __name__ == "__main__":
     gmail_inbox_processor()
