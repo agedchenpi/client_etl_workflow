@@ -35,7 +35,8 @@ ensure_directory_exists(FILE_WATCHER_DIR)
 ensure_directory_exists(FILE_WATCHER_TEMP_DIR)
 
 # Define Event IDs range
-event_ids = range(94583, 120400)
+# event_ids = range(94583, 120400)
+event_ids = range(100000, 130000)
 
 
 # Global lock and variables
