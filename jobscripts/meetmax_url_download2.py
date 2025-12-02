@@ -42,24 +42,34 @@ def fetch_url_data(log_file, run_uuid, user, script_start_time):
             with conn.cursor() as cur:
                 cur.execute("""
                     WITH MaxURLCheckDate AS (
-                        SELECT MAX(t.datasetdate) AS maxdatasetdate 
-                        FROM dba.tdataset t 
-                        WHERE t.isactive = TRUE AND t.datasettypeid = 2
+                        SELECT 
+                            MAX(t.datasetdate) AS maxdatasetdate
+                        FROM dba.tdataset t
+                        WHERE t.isactive = TRUE
+                        AND t.datasettypeid = 2
+                        and t.datasetdate = '2025-09-23'
                     ),
                     LatestURLCheckDataset AS (
-                        SELECT DISTINCT mm.eventid,
+                        SELECT DISTINCT
+                            mm.eventid,
                             mm.isdownloadable,
                             mm.downloadlink,
                             ds.isactive,
-                            mu.maxdatasetdate 
-                        FROM public.tmeetmaxurlcheck mm 
-                        JOIN dba.tdataset ds ON ds.datasetid = mm.datasetid 
-                        CROSS JOIN MaxURLCheckDate mu 
-                        WHERE ds.isactive = TRUE AND mm.isdownloadable = '1'
-                            AND ds.datasetdate = mu.maxdatasetdate
-                    ) 
-                    SELECT eventid, isdownloadable, downloadlink, isactive, maxdatasetdate 
-                    FROM LatestURLCheckDataset 
+                            mu.maxdatasetdate
+                        FROM public.tmeetmaxurlcheck mm
+                        JOIN dba.tdataset ds ON ds.datasetid = mm.datasetid
+                        CROSS JOIN MaxURLCheckDate mu
+                        WHERE ds.isactive = TRUE
+                        AND mm.isdownloadable = '1'
+                        AND ds.datasetdate = mu.maxdatasetdate
+                    )
+                    SELECT 
+                        eventid,
+                        isdownloadable,
+                        downloadlink,
+                        isactive,
+                        maxdatasetdate
+                    FROM LatestURLCheckDataset
                     ORDER BY eventid;
                 """)
                 rows = cur.fetchall()
@@ -91,7 +101,7 @@ def fetch_url_data(log_file, run_uuid, user, script_start_time):
                     run_uuid=run_uuid, stepcounter="DataFetch_6", user=user, script_start_time=script_start_time)
         return None
 
-def download_file(event_id, download_url, log_file, run_uuid, user, script_start_time, timestamp):
+def download_file(event_id, download_url, log_file, run_uuid, user, script_start_time, timestamp, driver_path):
     """Download an XLS file using Selenium."""
     result = {
         "EventID": event_id,
@@ -110,7 +120,7 @@ def download_file(event_id, download_url, log_file, run_uuid, user, script_start
     options.set_preference("browser.download.manager.showWhenStarting", False)
     options.set_preference("browser.helperApps.neverAsk.saveToDisk", "text/csv,application/vnd.ms-excel,application/octet-stream,application/csv,text/comma-separated-values")
     try:
-        service = Service(GeckoDriverManager().install())
+        service = Service(executable_path=driver_path)
         driver = webdriver.Firefox(service=service, options=options)
         driver.get(download_url)
         log_message(log_file, "Debug", f"Page title after load: {driver.title}", run_uuid=run_uuid, stepcounter=f"download_{event_id}_page", user=user, script_start_time=script_start_time)
@@ -172,26 +182,31 @@ def meetmax_url_download():
                 run_uuid=run_uuid, stepcounter="Initialization_0", user=user, script_start_time=script_start_time)
     log_message(log_file, "Initialization", f"Results CSV path: {results_file}",
                 run_uuid=run_uuid, stepcounter="Initialization_1", user=user, script_start_time=script_start_time)
-    
-    # Hardcode for testing single eventID 119243
-    downloadable = pd.DataFrame([
-        {
-            'EventID': 119243,
-            'DownloadLink': 'https://www.meetmax.com/sched/event_119243/__co-list_cp.html',
-            'IsDownloadable': 1,  # Assume downloadable for test
-            'IsActive': 1         # Assume active for test
-        }
-    ])
-    log_message(log_file, "TestMode", "Hardcoded single eventID 119243 for testing",
-                run_uuid=run_uuid, stepcounter="TestMode_0", user=user, script_start_time=script_start_time)
-    
+    # Fetch data
+    df = fetch_url_data(log_file, run_uuid, user, script_start_time)
+    if df is None or df.empty:
+        log_message(log_file, "Error", "No data fetched. Exiting.",
+                    run_uuid=run_uuid, stepcounter="DataFetch_5", user=user, script_start_time=script_start_time)
+        return
+    # Filter downloadable events
+    downloadable = df[(df["IsDownloadable"] == 1) & (df["DownloadLink"].notna())]
+    log_message(log_file, "Filter", f"Found {len(downloadable)} downloadable events",
+                run_uuid=run_uuid, stepcounter="Filter_0", user=user, script_start_time=script_start_time)
+    log_message(log_file, "Debug", f"Rows with IsDownloadable=1: {len(df[df['IsDownloadable'] == 1])}",
+                run_uuid=run_uuid, stepcounter="Filter_1", user=user, script_start_time=script_start_time)
+    log_message(log_file, "Debug", f"Rows with IsDownloadable=1 and DownloadLink not null: {len(downloadable)}",
+                run_uuid=run_uuid, stepcounter="Filter_2", user=user, script_start_time=script_start_time)
+    log_message(log_file, "Debug", f"Downloadable rows: {len(downloadable)}, EventIDs: {downloadable['EventID'].tolist()}",
+                run_uuid=run_uuid, stepcounter="Filter_3", user=user, script_start_time=script_start_time)
     results = []
+    # Install GeckoDriver once
+    driver_path = GeckoDriverManager().install()
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         futures = []
         for _, row in downloadable.iterrows():
             event_id = row["EventID"]
             download_url = row["DownloadLink"]
-            futures.append(executor.submit(download_file, event_id, download_url, log_file, run_uuid, user, script_start_time, timestamp))
+            futures.append(executor.submit(download_file, event_id, download_url, log_file, run_uuid, user, script_start_time, timestamp, driver_path))
             time.sleep(TASK_SUBMISSION_DELAY)
         for future in futures:
             result = future.result()
