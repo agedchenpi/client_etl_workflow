@@ -83,6 +83,20 @@ def get_config(config_id, log_file, run_uuid, user, script_start_time):
                     run_uuid=run_uuid, stepcounter="ConfigFetch_1", user=user, script_start_time=script_start_time)
         return None
 
+def map_date_format(format_str):
+    mapping = {
+        'yyyy': '%Y',
+        'MM': '%m',
+        'dd': '%d',
+        'HH': '%H',
+        'mm': '%M',
+        'ss': '%S',
+        'T': 'T'  # Literal 'T'
+    }
+    for placeholder, directive in mapping.items():
+        format_str = format_str.replace(placeholder, directive)
+    return format_str
+
 def parse_metadata(filename, config, field_source, field_location, delimiter, log_file, run_uuid, user, script_start_time):
     """Parse metadata label or date based on configuration."""
     if field_source == "filename":
@@ -534,11 +548,12 @@ def generic_import(config_id):
         file_success = True
         log_message(log_file, "Processing", f"Processing file: {filename}",
                     run_uuid=run_uuid, stepcounter=f"File_{filename}_0", user=user, script_start_time=script_start_time)
-        # Parse date from filename
+        # Parse date from filename            
         date_string = parse_metadata(filename, config, config["dateconfig"], config["datelocation"], config["delimiter"], log_file, run_uuid, user, script_start_time)
         if date_string:
             try:
-                dataset_date = datetime.strptime(date_string, config['dateformat']).date()
+                mapped_format = map_date_format(config['dateformat'])  # Map placeholders here
+                dataset_date = datetime.strptime(date_string, mapped_format).date()
                 log_message(log_file, "Processing", f"Parsed dataset_date {dataset_date} from filename '{filename}'",
                             run_uuid=run_uuid, stepcounter=f"File_{filename}_Date", user=user, script_start_time=script_start_time)
             except ValueError as e:
