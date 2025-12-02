@@ -49,12 +49,14 @@ def fetch_url_data(log_file, run_uuid, user, script_start_time):
         with psycopg2.connect(**DB_PARAMS) as conn:
             with conn.cursor() as cur:
                 cur.execute("""
-                    WITH MaxURLCheckDate AS (
+                    
+      WITH MaxURLCheckDate AS (
                         SELECT 
                             MAX(t.datasetdate) AS maxdatasetdate
                         FROM dba.tdataset t
                         WHERE t.isactive = TRUE
                         AND t.datasettypeid = 2
+                        and t.datasetdate = '2025-09-23'
                     ),
                     LatestURLCheckDataset AS (
                         SELECT DISTINCT
