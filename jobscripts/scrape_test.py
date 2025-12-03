@@ -15,8 +15,11 @@ from bs4 import BeautifulSoup
 import csv
 import logging
 
+# Capture timestamp at the start
+current_time = datetime.now().strftime('%Y%m%dT%H%M%S')
+
 # Set up logging to file
-log_filename = LOG_DIR / f"scrape_test_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+log_filename = LOG_DIR / f"scrape_test_{current_time}.log"
 logging.basicConfig(
     filename=str(log_filename),
     level=logging.INFO,
@@ -38,31 +41,117 @@ COMPANY_VARIATIONS = [
 ]
 TICKER_VARIATIONS = ["ticker", "company ticker"]
 
-def scrape_meetmax(event_id):
+def scrape_meetmax(event_id, metadata_list, current_time):
     logging.info(f"Starting scrape for event {event_id}")
     url = f"https://www.meetmax.com/sched/event_{event_id}/__co-list_cp.html"
+    page_status = "Invalid"
+    status_code = None
+    is_active_web_page = False
+    is_invalid_event_id = False
+    title = "N/A"
+    result = ""
+    response = None
     try:
         response = requests.get(url)
+        status_code = response.status_code
     except Exception as e:
         logging.error(f"Error fetching URL for event {event_id}: {str(e)}")
-        return f"Error fetching URL for event {event_id}: {str(e)}"
+        result = f"Error fetching URL for event {event_id}: {str(e)}"
+        metadata_list.append({
+            "EventID": event_id,
+            "URL": url,
+            "IsActiveWebPage": is_active_web_page,
+            "IsInvalidEventID": is_invalid_event_id,
+            "StatusCode": status_code,
+            "Title": title,
+            "PageStatus": page_status
+        })
+        return result
     
     if response.status_code != 200:
+        if response.status_code == 403:
+            page_status = "AccessDenied"
         logging.error(f"Invalid URL or error for event {event_id} (status: {response.status_code})")
-        return f"Invalid URL or error for event {event_id} (status: {response.status_code})"
+        result = f"Invalid URL or error for event {event_id} (status: {response.status_code})"
+        metadata_list.append({
+            "EventID": event_id,
+            "URL": url,
+            "IsActiveWebPage": is_active_web_page,
+            "IsInvalidEventID": is_invalid_event_id,
+            "StatusCode": status_code,
+            "Title": title,
+            "PageStatus": page_status
+        })
+        return result
     
     soup = BeautifulSoup(response.text, 'html.parser')
+    title = soup.title.string.strip() if soup.title else "N/A"
+    
+    # Check for access denied in text (even if 200)
+    if "access denied" in response.text.lower():
+        page_status = "AccessDenied"
+        logging.info(f"Access Denied for event {event_id}")
+        result = f"Access Denied for event {event_id}"
+        metadata_list.append({
+            "EventID": event_id,
+            "URL": url,
+            "IsActiveWebPage": is_active_web_page,
+            "IsInvalidEventID": is_invalid_event_id,
+            "StatusCode": status_code,
+            "Title": title,
+            "PageStatus": page_status
+        })
+        return result
+    
+    # Check for invalid event ID
+    if "Invalid Event ID" in response.text:
+        is_invalid_event_id = True
+        page_status = "Invalid"
+        logging.info(f"Invalid Event ID for event {event_id}")
+        result = f"Invalid Event ID for event {event_id}"
+        metadata_list.append({
+            "EventID": event_id,
+            "URL": url,
+            "IsActiveWebPage": is_active_web_page,
+            "IsInvalidEventID": is_invalid_event_id,
+            "StatusCode": status_code,
+            "Title": title,
+            "PageStatus": page_status
+        })
+        return result
     
     # Check for no data indicator
     if "No companies found" in response.text:
+        page_status = "Empty"
         logging.info(f"Valid page for event {event_id}, but no company data available.")
-        return f"Valid page for event {event_id}, but no company data available."
+        result = f"Valid page for event {event_id}, but no company data available."
+        metadata_list.append({
+            "EventID": event_id,
+            "URL": url,
+            "IsActiveWebPage": is_active_web_page,
+            "IsInvalidEventID": is_invalid_event_id,
+            "StatusCode": status_code,
+            "Title": title,
+            "PageStatus": page_status
+        })
+        return result
     
     # Find the main table containing company data
     table = soup.find('table')
     if not table:
+        page_status = "Empty"
         logging.info(f"Valid page for event {event_id}, but no table found.")
-        return f"Valid page for event {event_id}, but no table found."
+        result = f"Valid page for event {event_id}, but no table found."
+        metadata_list.append({
+            "EventID": event_id,
+            "URL": url,
+            "IsActiveWebPage": is_active_web_page,
+            "IsInvalidEventID": is_invalid_event_id,
+            "StatusCode": status_code,
+            "Title": title,
+            "PageStatus": page_status
+        })
+        return result
     
     # Get headers
     header_row = table.find('tr')
@@ -111,11 +200,24 @@ def scrape_meetmax(event_id):
         companies.append((company, ticker))
     
     if not companies:
+        page_status = "Empty"
         logging.info(f"Valid page for event {event_id}, but no company data extracted from table.")
-        return f"Valid page for event {event_id}, but no company data extracted from table."
+        result = f"Valid page for event {event_id}, but no company data extracted from table."
+        metadata_list.append({
+            "EventID": event_id,
+            "URL": url,
+            "IsActiveWebPage": is_active_web_page,
+            "IsInvalidEventID": is_invalid_event_id,
+            "StatusCode": status_code,
+            "Title": title,
+            "PageStatus": page_status
+        })
+        return result
     
-    # Use absolute path
-    csv_filename = str(FILE_WATCHER_DIR / f"event_{event_id}_companies.csv")
+    page_status = "Active"
+    is_active_web_page = True
+    # Use absolute path with timestamp
+    csv_filename = str(FILE_WATCHER_DIR / f"MeetMaxEvent_{event_id}_{current_time}.csv")
     try:
         with open(csv_filename, 'w', newline='') as csvfile:
             writer = csv.writer(csvfile)
@@ -125,24 +227,56 @@ def scrape_meetmax(event_id):
         logging.info(f"Successfully wrote data for event {event_id} to {csv_filename}")
     except Exception as e:
         logging.error(f"Error writing CSV for event {event_id}: {str(e)}")
-        return f"Error writing CSV for event {event_id}: {str(e)}"
+        result = f"Error writing CSV for event {event_id}: {str(e)}"
+        metadata_list.append({
+            "EventID": event_id,
+            "URL": url,
+            "IsActiveWebPage": is_active_web_page,
+            "IsInvalidEventID": is_invalid_event_id,
+            "StatusCode": status_code,
+            "Title": title,
+            "PageStatus": page_status
+        })
+        return result
     
     result = f"Companies for event {event_id} (written to {csv_filename}):\n"
     for name, tickers in companies:
         result += f"- {name}: {tickers}\n"
     
+    metadata_list.append({
+        "EventID": event_id,
+        "URL": url,
+        "IsActiveWebPage": is_active_web_page,
+        "IsInvalidEventID": is_invalid_event_id,
+        "StatusCode": status_code,
+        "Title": title,
+        "PageStatus": page_status
+    })
     return result
 
 # Proof of concept with the event IDs
-event_ids = ["112573", "113453", "119243", "120103", "120097"]
+event_ids = ["112573", "113453", "119243", "120103", "120097","120999"]
 
 logging.info("Starting scrape_test.py script")
 
+metadata_list = []
+
 with ThreadPoolExecutor(max_workers=5) as executor:
-    results = list(executor.map(scrape_meetmax, event_ids))
+    results = list(executor.map(lambda eid: scrape_meetmax(eid, metadata_list, current_time), event_ids))
 
 for result in results:
     print(result)
     print("\n---\n")
+
+# Write metadata CSV
+metadata_csv = str(FILE_WATCHER_DIR / f"MeetMaxURLScan_{current_time}.csv")
+try:
+    with open(metadata_csv, 'w', newline='') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=["EventID", "URL", "IsActiveWebPage", "IsInvalidEventID", "StatusCode", "Title", "PageStatus"])
+        writer.writeheader()
+        writer.writerows(metadata_list)
+    logging.info(f"Successfully wrote metadata to {metadata_csv}")
+except Exception as e:
+    logging.error(f"Error writing metadata CSV: {str(e)}")
 
 logging.info("Completed scrape_test.py script")
