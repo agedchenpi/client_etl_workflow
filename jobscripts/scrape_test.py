@@ -14,21 +14,28 @@ import requests
 from bs4 import BeautifulSoup
 import csv
 import logging
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
 
 # Capture timestamp at the start
 current_time = datetime.now().strftime('%Y%m%dT%H%M%S')
 
-# Set up logging to file
+# Set up logging to file and console
 log_filename = LOG_DIR / f"scrape_test_{current_time}.log"
+file_handler = logging.FileHandler(str(log_filename))
+console_handler = logging.StreamHandler()
 logging.basicConfig(
-    filename=str(log_filename),
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[file_handler, console_handler]
 )
 
 # Call to ensure directories exist
 ensure_directory_exists(str(FILE_WATCHER_DIR))
 ensure_directory_exists(str(LOG_DIR))
+
+# Generate event IDs as a range (e.g., 120000 to 120010 for testing; expand as needed)
+event_ids = [str(i) for i in range(120090, 120110)]
 
 # Variations for company and ticker columns (lowercase)
 COMPANY_VARIATIONS = [
@@ -41,6 +48,24 @@ COMPANY_VARIATIONS = [
 ]
 TICKER_VARIATIONS = ["ticker", "company ticker"]
 
+# Enhanced session with retries and headers
+def create_session():
+    session = requests.Session()
+    retry = Retry(
+        total=1,  # Retry up to 1 times
+        backoff_factor=1,  # Wait 1s, 2s, 4s between retries
+        status_forcelist=[429, 500, 502, 503, 504]  # Retry on these status codes
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
+    session.headers.update({
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    })
+    return session
+
+session = create_session()
+
 def scrape_meetmax(event_id, metadata_list, current_time):
     logging.info(f"Starting scrape for event {event_id}")
     url = f"https://www.meetmax.com/sched/event_{event_id}/__co-list_cp.html"
@@ -49,10 +74,11 @@ def scrape_meetmax(event_id, metadata_list, current_time):
     is_active_web_page = False
     is_invalid_event_id = False
     title = "N/A"
+    num_companies = 0
     result = ""
     response = None
     try:
-        response = requests.get(url)
+        response = session.get(url, timeout=10)  # Timeout after 10s
         status_code = response.status_code
     except Exception as e:
         logging.error(f"Error fetching URL for event {event_id}: {str(e)}")
@@ -64,7 +90,8 @@ def scrape_meetmax(event_id, metadata_list, current_time):
             "IsInvalidEventID": is_invalid_event_id,
             "StatusCode": status_code,
             "Title": title,
-            "PageStatus": page_status
+            "PageStatus": page_status,
+            "NumCompanies": num_companies
         })
         return result
     
@@ -80,7 +107,8 @@ def scrape_meetmax(event_id, metadata_list, current_time):
             "IsInvalidEventID": is_invalid_event_id,
             "StatusCode": status_code,
             "Title": title,
-            "PageStatus": page_status
+            "PageStatus": page_status,
+            "NumCompanies": num_companies
         })
         return result
     
@@ -99,7 +127,8 @@ def scrape_meetmax(event_id, metadata_list, current_time):
             "IsInvalidEventID": is_invalid_event_id,
             "StatusCode": status_code,
             "Title": title,
-            "PageStatus": page_status
+            "PageStatus": page_status,
+            "NumCompanies": num_companies
         })
         return result
     
@@ -116,7 +145,8 @@ def scrape_meetmax(event_id, metadata_list, current_time):
             "IsInvalidEventID": is_invalid_event_id,
             "StatusCode": status_code,
             "Title": title,
-            "PageStatus": page_status
+            "PageStatus": page_status,
+            "NumCompanies": num_companies
         })
         return result
     
@@ -132,7 +162,8 @@ def scrape_meetmax(event_id, metadata_list, current_time):
             "IsInvalidEventID": is_invalid_event_id,
             "StatusCode": status_code,
             "Title": title,
-            "PageStatus": page_status
+            "PageStatus": page_status,
+            "NumCompanies": num_companies
         })
         return result
     
@@ -149,7 +180,8 @@ def scrape_meetmax(event_id, metadata_list, current_time):
             "IsInvalidEventID": is_invalid_event_id,
             "StatusCode": status_code,
             "Title": title,
-            "PageStatus": page_status
+            "PageStatus": page_status,
+            "NumCompanies": num_companies
         })
         return result
     
@@ -210,12 +242,14 @@ def scrape_meetmax(event_id, metadata_list, current_time):
             "IsInvalidEventID": is_invalid_event_id,
             "StatusCode": status_code,
             "Title": title,
-            "PageStatus": page_status
+            "PageStatus": page_status,
+            "NumCompanies": num_companies
         })
         return result
     
     page_status = "Active"
     is_active_web_page = True
+    num_companies = len(companies)
     # Use absolute path with timestamp
     csv_filename = str(FILE_WATCHER_DIR / f"MeetMaxEvent_{event_id}_{current_time}.csv")
     try:
@@ -235,7 +269,8 @@ def scrape_meetmax(event_id, metadata_list, current_time):
             "IsInvalidEventID": is_invalid_event_id,
             "StatusCode": status_code,
             "Title": title,
-            "PageStatus": page_status
+            "PageStatus": page_status,
+            "NumCompanies": num_companies
         })
         return result
     
@@ -250,12 +285,11 @@ def scrape_meetmax(event_id, metadata_list, current_time):
         "IsInvalidEventID": is_invalid_event_id,
         "StatusCode": status_code,
         "Title": title,
-        "PageStatus": page_status
+        "PageStatus": page_status,
+        "NumCompanies": num_companies
     })
     return result
 
-# Proof of concept with the event IDs
-event_ids = ["112573", "113453", "119243", "120103", "120097","120999"]
 
 logging.info("Starting scrape_test.py script")
 
@@ -263,17 +297,20 @@ metadata_list = []
 
 with ThreadPoolExecutor(max_workers=5) as executor:
     results = list(executor.map(lambda eid: scrape_meetmax(eid, metadata_list, current_time), event_ids))
+    # Rate limiting: Sleep 1s between batches if needed; for larger ranges, add inside map or chunk
 
 for result in results:
     print(result)
     print("\n---\n")
 
-# Write metadata CSV
+# Write metadata CSV (append mode for incremental runs)
 metadata_csv = str(FILE_WATCHER_DIR / f"MeetMaxURLScan_{current_time}.csv")
 try:
-    with open(metadata_csv, 'w', newline='') as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=["EventID", "URL", "IsActiveWebPage", "IsInvalidEventID", "StatusCode", "Title", "PageStatus"])
-        writer.writeheader()
+    file_exists = os.path.isfile(metadata_csv)
+    with open(metadata_csv, 'a', newline='') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=["EventID", "URL", "IsActiveWebPage", "IsInvalidEventID", "StatusCode", "Title", "PageStatus", "NumCompanies"])
+        if not file_exists:
+            writer.writeheader()
         writer.writerows(metadata_list)
     logging.info(f"Successfully wrote metadata to {metadata_csv}")
 except Exception as e:
