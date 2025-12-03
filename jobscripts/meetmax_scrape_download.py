@@ -35,7 +35,7 @@ ensure_directory_exists(str(FILE_WATCHER_DIR))
 ensure_directory_exists(str(LOG_DIR))
 
 # Generate event IDs as a range
-event_ids = range(101117, 125000)
+event_ids = range(101117, 127000)
 
 
 # Variations for company and ticker columns (lowercase)
