@@ -4,6 +4,7 @@ logs/*.txt
 logs/*.log
 logs/*
 file_watcher/*.csv
+file_watcher/NewScrape/*.csv
 file_watcher/*.xls
 file_watcher/Temp/*
 file_watcher/test/*.xls
