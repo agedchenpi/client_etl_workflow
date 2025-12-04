@@ -16,6 +16,7 @@ import csv
 import logging
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
+import random  # For random delays and UA rotation
 
 # Capture timestamp at the start
 current_time = datetime.now().strftime('%Y%m%dT%H%M%S')
@@ -35,7 +36,8 @@ ensure_directory_exists(str(FILE_WATCHER_DIR))
 ensure_directory_exists(str(LOG_DIR))
 
 # Generate event IDs as a range
-event_ids = range(101117, 127000)
+#event_ids = range(101117, 127000)
+event_ids = range(101117, 101150)
 
 
 # Variations for company and ticker columns (lowercase)
@@ -48,7 +50,12 @@ COMPANY_VARIATIONS = [
     "description"
 ]
 TICKER_VARIATIONS = ["ticker", "company ticker"]
-
+# Add User-Agent list for rotation
+USER_AGENTS = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.101 Safari/537.36'
+]
 # Enhanced session with retries and headers
 def create_session():
     session = requests.Session()
@@ -68,6 +75,8 @@ def create_session():
 session = create_session()
 
 def scrape_meetmax(event_id, metadata_list, current_time):
+    time.sleep(random.uniform(3, 5))  # Increased to 3-5 sec for safer rate
+    session.headers.update({'User-Agent': random.choice(USER_AGENTS)})  # Rotate UA
     logging.info(f"Starting scrape for event {event_id}")
     url = f"https://www.meetmax.com/sched/event_{event_id}/__co-list_cp.html"
     page_status = "Invalid"
@@ -79,7 +88,12 @@ def scrape_meetmax(event_id, metadata_list, current_time):
     # result = ""  # Removed detailed result string building to avoid memory overhead
     response = None
     try:
-        response = session.get(url, timeout=10)  # Timeout after 10s
+        response = session.get(url, timeout=10) # Timeout after 10s
+        # Add ban detection
+        if "rate limited" in response.text.lower() or "error 1015" in response.text.lower():
+            logging.warning(f"Rate limit detected for {event_id}. Pausing 60 sec.")
+            time.sleep(60)
+            response = session.get(url, timeout=10)  # Retry once
         status_code = response.status_code
     except Exception as e:
         logging.error(f"Error fetching URL for event {event_id}: {str(e)}")
@@ -95,7 +109,6 @@ def scrape_meetmax(event_id, metadata_list, current_time):
             "NumCompanies": num_companies
         })
         return None  # Return None to indicate no printable result
-    
     if response.status_code != 200:
         if response.status_code == 403:
             page_status = "AccessDenied"
@@ -115,7 +128,7 @@ def scrape_meetmax(event_id, metadata_list, current_time):
     
     soup = BeautifulSoup(response.text, 'html.parser')
     title = soup.title.string.strip() if soup.title else "N/A"
-    
+
     # Check for access denied in text (even if 200)
     if "access denied" in response.text.lower():
         page_status = "AccessDenied"
@@ -201,21 +214,19 @@ def scrape_meetmax(event_id, metadata_list, current_time):
     
     companies = []
     rows = table.find_all('tr')[1:]  # Skip header row
-    
     for row in rows:
         cells = row.find_all('td')
         if len(cells) < 1:
             continue
-        
         # Get company name
         company = cells[company_idx].text.strip() if len(cells) > company_idx else ""
-        
+
         # Get ticker if column exists
         if ticker_idx != -1 and len(cells) > ticker_idx:
             ticker = cells[ticker_idx].text.strip()
         else:
             ticker = "N/A"
-        
+
         # Handle private or empty ticker
         if "private" in ticker.lower():
             ticker = "Private (No Ticker)"
@@ -229,7 +240,7 @@ def scrape_meetmax(event_id, metadata_list, current_time):
         # Skip if company is empty or appears to be a non-company (e.g., KOL panel)
         if not company or company.startswith("** KOL"):
             continue
-        
+
         companies.append((company, ticker))
     
     if not companies:
@@ -295,7 +306,7 @@ logging.info("Starting scrape_test.py script")
 
 metadata_list = []
 
-with ThreadPoolExecutor(max_workers=5) as executor:
+with ThreadPoolExecutor(max_workers=2) as executor:  # Reduced from 5 to 2 to lower concurrency and ease rate limiting
     results = list(executor.map(lambda eid: scrape_meetmax(eid, metadata_list, current_time), event_ids))
     # Rate limiting: Sleep 1s between batches if needed; for larger ranges, add inside map or chunk
 
