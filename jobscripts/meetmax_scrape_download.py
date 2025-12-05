@@ -36,7 +36,7 @@ ensure_directory_exists(str(FILE_WATCHER_DIR))
 ensure_directory_exists(str(LOG_DIR))
 
 # Generate event IDs as a range
-event_ids = range(101117, 127000)
+event_ids = range(101117, 130000)
 
 
 
@@ -75,7 +75,7 @@ def create_session():
 session = create_session()
 
 def scrape_meetmax(event_id, metadata_list, current_time):
-    time.sleep(random.uniform(5, 10)) 
+    time.sleep(random.uniform(3, 5)) 
     session.headers.update({'User-Agent': random.choice(USER_AGENTS)})  # Rotate UA
     logging.info(f"Starting scrape for event {event_id}")
     url = f"https://www.meetmax.com/sched/event_{event_id}/__co-list_cp.html"
@@ -306,7 +306,7 @@ logging.info("Starting scrape_test.py script")
 
 metadata_list = []
 
-with ThreadPoolExecutor(max_workers=2) as executor:  # Reduced from 5 to 2 to lower concurrency and ease rate limiting
+with ThreadPoolExecutor(max_workers=5) as executor:  # Reduced from 5 to 2 to lower concurrency and ease rate limiting
     results = list(executor.map(lambda eid: scrape_meetmax(eid, metadata_list, current_time), event_ids))
     # Rate limiting: Sleep 1s between batches if needed; for larger ranges, add inside map or chunk
 
