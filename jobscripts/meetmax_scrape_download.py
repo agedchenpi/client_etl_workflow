@@ -40,6 +40,7 @@ event_ids = range(101117, 130000)
 
 
 
+
 # Variations for company and ticker columns (lowercase)
 COMPANY_VARIATIONS = [
     "company name",
@@ -75,7 +76,7 @@ def create_session():
 session = create_session()
 
 def scrape_meetmax(event_id, metadata_list, current_time):
-    time.sleep(random.uniform(3, 5)) 
+    time.sleep(random.uniform(5, 8)) 
     session.headers.update({'User-Agent': random.choice(USER_AGENTS)})  # Rotate UA
     logging.info(f"Starting scrape for event {event_id}")
     url = f"https://www.meetmax.com/sched/event_{event_id}/__co-list_cp.html"

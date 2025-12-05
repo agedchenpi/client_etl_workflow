@@ -36,8 +36,8 @@ def run_daily_cancellations_procedure():
         
         log_message(log_file, "Database", "Connected to database. Calling procedure p_insert_daily_cancellations.", run_uuid=run_uuid, stepcounter="Procedure_Call_0", user=user, script_start_time=script_start_time)
         
-        # Call the stored procedure
-        cur.callproc('public.p_insert_daily_cancellations')
+        # Call the stored procedure        
+        cur.execute("CALL public.p_insert_daily_cancellations();")
         
         # Commit the transaction
         conn.commit()
