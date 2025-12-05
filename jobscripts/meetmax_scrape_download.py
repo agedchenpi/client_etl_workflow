@@ -36,8 +36,8 @@ ensure_directory_exists(str(FILE_WATCHER_DIR))
 ensure_directory_exists(str(LOG_DIR))
 
 # Generate event IDs as a range
-#event_ids = range(101117, 127000)
-event_ids = range(101117, 101150)
+event_ids = range(101117, 127000)
+
 
 
 # Variations for company and ticker columns (lowercase)
@@ -61,7 +61,7 @@ def create_session():
     session = requests.Session()
     retry = Retry(
         total=3,  # Retry up to 3 times
-        backoff_factor=1,  # Wait 1s, 2s, 4s between retries
+        backoff_factor=2,  # Wait 1s, 2s, 4s between retries
         status_forcelist=[429, 500, 502, 503, 504]  # Retry on these status codes
     )
     adapter = HTTPAdapter(max_retries=retry)
@@ -75,7 +75,7 @@ def create_session():
 session = create_session()
 
 def scrape_meetmax(event_id, metadata_list, current_time):
-    time.sleep(random.uniform(3, 5))  # Increased to 3-5 sec for safer rate
+    time.sleep(random.uniform(5, 10)) 
     session.headers.update({'User-Agent': random.choice(USER_AGENTS)})  # Rotate UA
     logging.info(f"Starting scrape for event {event_id}")
     url = f"https://www.meetmax.com/sched/event_{event_id}/__co-list_cp.html"
