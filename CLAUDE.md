@@ -43,6 +43,7 @@ python jobscripts/<script>.py
 - `systemscripts/` - Core business logic modules
 - `schema/` - Database schema definitions (tables, functions, procedures, triggers)
 - `cron/` - Cron job configuration (symlinked to `/etc/cron.d/etl_jobs`)
+- `docs/` - Documentation (unused objects tracking, etc.)
 - `onboarding/sh/` - Setup scripts for new environments
 - `onboarding/sql/` - Database initialization SQL
 - `file_watcher/` - Staging directory for incoming files
