@@ -22,7 +22,7 @@ import random  # For random delays and UA rotation
 current_time = datetime.now().strftime('%Y%m%dT%H%M%S')
 
 # Set up logging to file and console
-log_filename = LOG_DIR / f"scrape_test_{current_time}.log"
+log_filename = LOG_DIR / f"meetmax_scrape_download_{current_time}.log"
 file_handler = logging.FileHandler(str(log_filename))
 console_handler = logging.StreamHandler()
 logging.basicConfig(
@@ -303,7 +303,7 @@ def scrape_meetmax(event_id, metadata_list, current_time):
     })
     return None  # No printable result
 
-logging.info("Starting scrape_test.py script")
+logging.info("Starting meetmax_scrape_download.py script")
 
 metadata_list = []
 
@@ -330,4 +330,4 @@ try:
 except Exception as e:
     logging.error(f"Error writing metadata CSV: {str(e)}")
 
-logging.info("Completed scrape_test.py script")
+logging.info("Completed meetmax_scrape_download.py script")
