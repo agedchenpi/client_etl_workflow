@@ -1,0 +1,18 @@
+
+# sends email reports monday through friday  at 220 pm
+20 14 * * 1-5 yostfundsadmin . /home/yostfundsadmin/client_etl_workflow/env.sh && /bin/bash /home/yostfundsadmin/client_etl_workflow/jobscripts/run_python_etl_script.sh send_reports.py 1 >> /home/yostfundsadmin/client_etl_workflow/logs/etl_cron.log 2>&1
+# cleanup logs
+0 2 * * 0 yostfundsadmin /bin/bash /home/yostfundsadmin/client_etl_workflow/jobscripts/weekly_cleanup_meetmaxevents.sh
+0 2 * * 0 yostfundsadmin /bin/bash /home/yostfundsadmin/client_etl_workflow/jobscripts/weekly_cleanup_logs.sh
+# Send 14 25 emails; i think this is deprecated
+31 14 * * 1-5 yostfundsadmin . /home/yostfundsadmin/client_etl_workflow/env.sh && /bin/bash /home/yostfundsadmin/client_etl_workflow/jobscripts/run_python_etl_script.sh send_reports.py 2 >> /home/yostfundsadmin/client_etl_workflow/logs/etl_cron.log 2>&1
+# Database backup every morning
+0 3 * * * yostfundsadmin /bin/bash /home/yostfundsadmin/client_etl_workflow/jobscripts/daily_backup.sh >> /home/yostfundsadmin/client_etl_workflow/logs/etl_cron.log 2>&1
+# Chain Gmail processing to DeaLogic import (config_id 5) at 4:15 PM weekdays
+15 12 * * 1-5 yostfundsadmin /bin/bash -c "cd /home/yostfundsadmin/client_etl_workflow/jobscripts && ./run_python_etl_script.sh run_gmail_inbox_processor.py && ./run_python_etl_script.sh run_import_job.py 7" >> /home/yostfundsadmin/client_etl_workflow/logs/etl_chain_$(date +\%Y\%m\%dT\%H\%M\%S).log 2>&1
+# Historical cancellation email
+30 14 * * 1-5 yostfundsadmin . /home/yostfundsadmin/client_etl_workflow/env.sh && /bin/bash /home/yostfundsadmin/client_etl_workflow/jobscripts/run_python_etl_script.sh send_reports.py 3 >> /home/yostfundsadmin/client_etl_workflow/logs/etl_cron.log 2>&1
+# MeetMax Scrape Download and Chained Imports (configs 8 and 9) on weekdays at 2 am
+15 0 * * 1-5 yostfundsadmin /home/yostfundsadmin/client_etl_workflow/jobscripts/meetmax_chain.sh
+# daily MM cancellations
+15 14 * * 1-5 yostfundsadmin /home/yostfundsadmin/client_etl_workflow/jobscripts/meetmax_daily_cancellations.sh

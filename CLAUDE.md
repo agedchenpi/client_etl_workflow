@@ -42,6 +42,7 @@ python jobscripts/<script>.py
 - `jobscripts/` - Entry point scripts (simple CLI wrappers)
 - `systemscripts/` - Core business logic modules
 - `schema/` - Database schema definitions (tables, functions, procedures, triggers)
+- `cron/` - Cron job configuration (symlinked to `/etc/cron.d/etl_jobs`)
 - `onboarding/sh/` - Setup scripts for new environments
 - `onboarding/sql/` - Database initialization SQL
 - `file_watcher/` - Staging directory for incoming files
@@ -117,6 +118,20 @@ Each entry includes: `run_uuid`, `stepcounter`, `step_runtime`, `total_runtime`,
 # View logs
 tail -f logs/run_python_etl_script.log
 ```
+
+## Scheduled Cron Jobs
+
+The cron configuration is in `cron/etl_jobs` (symlinked to `/etc/cron.d/etl_jobs`).
+
+| Schedule | Job | Description |
+|----------|-----|-------------|
+| `20 14 * * 1-5` | `send_reports.py 1` | Report #1 (Mon-Fri 2:20 PM) |
+| `30 14 * * 1-5` | `send_reports.py 3` | Historical cancellations (Mon-Fri 2:30 PM) |
+| `15 12 * * 1-5` | Gmail + Import #7 | Gmail processing chain (Mon-Fri 12:15 PM) |
+| `15 0 * * 1-5` | `meetmax_chain.sh` | MeetMax scrape (Mon-Fri 12:15 AM) |
+| `15 14 * * 1-5` | `meetmax_daily_cancellations.sh` | Daily cancellations (Mon-Fri 2:15 PM) |
+| `0 3 * * *` | `daily_backup.sh` | Database backup (Daily 3:00 AM) |
+| `0 2 * * 0` | cleanup scripts | Weekly cleanup (Sunday 2:00 AM) |
 
 ## Sensitive Files (in .gitignore)
 - `env.sh` - Credentials
