@@ -1,0 +1,91 @@
+CREATE OR REPLACE FUNCTION dba.f_dataset_iu(p_datasetid integer, p_datasetdate date, p_datasettype character varying, p_datasource character varying, p_label character varying, p_statusname character varying, p_createduser character varying)
+ RETURNS integer
+ LANGUAGE plpgsql
+AS $function$
+        DECLARE
+            v_datasettypeid INT;
+            v_datasourceid INT;
+            v_datastatusid INT;
+            v_efffromdate TIMESTAMP;
+            v_effthrudate TIMESTAMP;
+            v_datasetid INT;
+        BEGIN
+            -- Set effective dates
+            v_efffromdate := CURRENT_TIMESTAMP;
+            v_effthrudate := '9999-01-01';
+ 
+            -- Resolve datasettypeid
+            SELECT datasettypeid INTO v_datasettypeid
+            FROM dba.tdatasettype
+            WHERE typename = p_datasettype;
+            IF v_datasettypeid IS NULL THEN
+                RAISE EXCEPTION 'Dataset type % not found', p_datasettype;
+            END IF;
+ 
+            -- Resolve datasourceid
+            SELECT datasourceid INTO v_datasourceid
+            FROM dba.tdatasource
+            WHERE sourcename = p_datasource;
+            IF v_datasourceid IS NULL THEN
+                RAISE EXCEPTION 'Data source % not found', p_datasource;
+            END IF;
+ 
+            -- Resolve datastatusid
+            SELECT datastatusid INTO v_datastatusid
+            FROM dba.tdatastatus
+            WHERE statusname = p_statusname;
+            IF v_datastatusid IS NULL THEN
+                RAISE EXCEPTION 'Data status % not found', p_statusname;
+            END IF;
+ 
+            IF p_datasetid IS NULL THEN
+                -- Insert new dataset with isactive based on status
+                INSERT INTO dba.tdataset (
+                    datasetdate,
+                    label,
+                    datasettypeid,
+                    datasourceid,
+                    datastatusid,
+                    isactive,
+                    createddate,
+                    createdby,
+                    efffromdate,
+                    effthrudate
+                ) VALUES (
+                    p_datasetdate,
+                    p_label,
+                    v_datasettypeid,
+                    v_datasourceid,
+                    v_datastatusid,
+                    (p_statusname = 'Active'), -- Set to TRUE if 'Active'
+                    CURRENT_TIMESTAMP,
+                    p_createduser,
+                    v_efffromdate,
+                    v_effthrudate
+                ) RETURNING datasetid INTO v_datasetid;
+            ELSE
+                -- Update existing dataset
+                UPDATE dba.tdataset
+                SET datastatusid = v_datastatusid,
+                    isactive = CASE WHEN p_statusname = 'Active' THEN TRUE ELSE isactive END
+                WHERE datasetid = p_datasetid;
+ 
+                IF p_statusname = 'Active' THEN
+                    -- Deactivate other datasets with the same label, type, and date
+                    UPDATE dba.tdataset
+                    SET isactive = FALSE,
+                        effthrudate = CURRENT_TIMESTAMP,
+                        datastatusid = (SELECT datastatusid FROM dba.tdatastatus WHERE statusname = 'Inactive')
+                    WHERE label = p_label
+                      AND datasettypeid = v_datasettypeid
+                      AND datasetdate = p_datasetdate
+                      AND datasetid != p_datasetid
+                      AND isactive = TRUE;
+                END IF;
+                v_datasetid := p_datasetid;
+            END IF;
+ 
+            RETURN v_datasetid;
+        END;
+        $function$
+

@@ -41,6 +41,7 @@ python jobscripts/<script>.py
 ### Directory Structure
 - `jobscripts/` - Entry point scripts (simple CLI wrappers)
 - `systemscripts/` - Core business logic modules
+- `schema/` - Database schema definitions (tables, functions, procedures, triggers)
 - `onboarding/sh/` - Setup scripts for new environments
 - `onboarding/sql/` - Database initialization SQL
 - `file_watcher/` - Staging directory for incoming files
