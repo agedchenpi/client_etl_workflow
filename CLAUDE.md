@@ -26,8 +26,9 @@ This is a **database-driven ETL pipeline** for a Linux homelab that automates:
 /bin/bash jobscripts/run_python_etl_script.sh send_reports.py 1
 /bin/bash jobscripts/run_python_etl_script.sh run_gmail_inbox_processor.py
 
-# Update cron jobs (requires sudo)
-sudo /bin/bash jobscripts/run_python_etl_script.sh update_cron_jobs.py
+# Update cron jobs (generates local file, then manually copy to /etc/cron.d/)
+/bin/bash jobscripts/run_python_etl_script.sh update_cron_jobs.py
+sudo cp cron/etl_jobs /etc/cron.d/etl_jobs && sudo chown root:root /etc/cron.d/etl_jobs
 ```
 
 For direct development/testing:
@@ -42,7 +43,7 @@ python jobscripts/<script>.py
 - `jobscripts/` - Entry point scripts (simple CLI wrappers)
 - `systemscripts/` - Core business logic modules
 - `schema/` - Database schema definitions (tables, functions, procedures, triggers)
-- `cron/` - Cron job configuration (symlinked to `/etc/cron.d/etl_jobs`)
+- `cron/` - Cron job configuration (reference file, manually copied to `/etc/cron.d/etl_jobs`)
 - `docs/` - Documentation (unused objects tracking, etc.)
 - `onboarding/sh/` - Setup scripts for new environments
 - `onboarding/sql/` - Database initialization SQL
@@ -71,7 +72,7 @@ Gmail/Web Scraping → file_watcher/ → generic_import.py → PostgreSQL → se
 | `generic_import.py` | Core ETL data loading from `dba.timportconfig` |
 | `gmail_inbox_processor.py` | Gmail API interaction, rules from `dba.tinboxconfig` |
 | `send_reports.py` | Report generation from `dba.treportmanager` |
-| `update_cron_jobs.py` | Regenerates `/etc/cron.d/etl_jobs` from database |
+| `update_cron_jobs.py` | Generates `cron/etl_jobs` from database (manually copy to `/etc/cron.d/`) |
 | `xls_to_csv.py` | Excel to CSV conversion |
 | `log_utils.py` | Triple-redundancy logging (CSV, TXT, PostgreSQL) |
 
@@ -105,7 +106,11 @@ Each entry includes: `run_uuid`, `stepcounter`, `step_runtime`, `total_runtime`,
 1. Add configuration row to appropriate `dba.*` table
 2. (Optional) Create entry point in `jobscripts/`
 3. (Optional) Add logic module in `systemscripts/`
-4. Regenerate cron: `sudo /bin/bash jobscripts/run_python_etl_script.sh update_cron_jobs.py`
+4. Regenerate cron file and apply:
+   ```bash
+   /bin/bash jobscripts/run_python_etl_script.sh update_cron_jobs.py
+   sudo cp cron/etl_jobs /etc/cron.d/etl_jobs && sudo chown root:root /etc/cron.d/etl_jobs
+   ```
 
 ## Testing
 
@@ -122,7 +127,10 @@ tail -f logs/run_python_etl_script.log
 
 ## Scheduled Cron Jobs
 
-The cron configuration is in `cron/etl_jobs` (symlinked to `/etc/cron.d/etl_jobs`).
+The cron configuration is maintained in `cron/etl_jobs` (reference file). To apply changes, copy to `/etc/cron.d/`:
+```bash
+sudo cp cron/etl_jobs /etc/cron.d/etl_jobs && sudo chown root:root /etc/cron.d/etl_jobs
+```
 
 | Schedule | Job | Description |
 |----------|-----|-------------|
