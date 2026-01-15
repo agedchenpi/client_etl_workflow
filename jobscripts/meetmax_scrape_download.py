@@ -117,129 +117,49 @@ def create_session():
 
 session = create_session()
 
-def scrape_meetmax(event_id, metadata_list, current_time):
-    time.sleep(random.uniform(5, 8)) 
-    session.headers.update({'User-Agent': random.choice(USER_AGENTS)})  # Rotate UA
+def scrape_meetmax(event_id, current_time):
+    """Scrape company data from a MeetMax event page."""
+    time.sleep(random.uniform(5, 8))
+    session.headers.update({'User-Agent': random.choice(USER_AGENTS)})
     logging.info(f"Starting scrape for event {event_id}")
     url = f"https://www.meetmax.com/sched/event_{event_id}/__co-list_cp.html"
-    page_status = "Invalid"
-    status_code = None
-    is_active_web_page = False
-    is_invalid_event_id = False
-    title = "N/A"
-    num_companies = 0
-    # result = ""  # Removed detailed result string building to avoid memory overhead
     response = None
+
     try:
-        response = session.get(url, timeout=10) # Timeout after 10s
-        # Add ban detection
+        response = session.get(url, timeout=10)
         if "rate limited" in response.text.lower() or "error 1015" in response.text.lower():
             logging.warning(f"Rate limit detected for {event_id}. Pausing 60 sec.")
             time.sleep(60)
-            response = session.get(url, timeout=10)  # Retry once
-        status_code = response.status_code
+            response = session.get(url, timeout=10)
     except Exception as e:
         logging.error(f"Error fetching URL for event {event_id}: {str(e)}")
-        # result = f"Error fetching URL for event {event_id}: {str(e)}"
-        metadata_list.append({
-            "EventID": event_id,
-            "URL": url,
-            "IsActiveWebPage": is_active_web_page,
-            "IsInvalidEventID": is_invalid_event_id,
-            "StatusCode": status_code,
-            "Title": title,
-            "PageStatus": page_status,
-            "NumCompanies": num_companies
-        })
-        return None  # Return None to indicate no printable result
-    if response.status_code != 200:
-        if response.status_code == 403:
-            page_status = "AccessDenied"
-        logging.error(f"Invalid URL or error for event {event_id} (status: {response.status_code})")
-        # result = f"Invalid URL or error for event {event_id} (status: {response.status_code})"
-        metadata_list.append({
-            "EventID": event_id,
-            "URL": url,
-            "IsActiveWebPage": is_active_web_page,
-            "IsInvalidEventID": is_invalid_event_id,
-            "StatusCode": status_code,
-            "Title": title,
-            "PageStatus": page_status,
-            "NumCompanies": num_companies
-        })
         return None
-    
+
+    if response.status_code != 200:
+        logging.error(f"Invalid URL or error for event {event_id} (status: {response.status_code})")
+        return None
+
     soup = BeautifulSoup(response.text, 'html.parser')
-    title = soup.title.string.strip() if soup.title else "N/A"
 
     # Check for access denied in text (even if 200)
     if "access denied" in response.text.lower():
-        page_status = "AccessDenied"
         logging.info(f"Access Denied for event {event_id}")
-        # result = f"Access Denied for event {event_id}"
-        metadata_list.append({
-            "EventID": event_id,
-            "URL": url,
-            "IsActiveWebPage": is_active_web_page,
-            "IsInvalidEventID": is_invalid_event_id,
-            "StatusCode": status_code,
-            "Title": title,
-            "PageStatus": page_status,
-            "NumCompanies": num_companies
-        })
         return None
-    
+
     # Check for invalid event ID
     if "Invalid Event ID" in response.text:
-        is_invalid_event_id = True
-        page_status = "Invalid"
         logging.info(f"Invalid Event ID for event {event_id}")
-        # result = f"Invalid Event ID for event {event_id}"
-        metadata_list.append({
-            "EventID": event_id,
-            "URL": url,
-            "IsActiveWebPage": is_active_web_page,
-            "IsInvalidEventID": is_invalid_event_id,
-            "StatusCode": status_code,
-            "Title": title,
-            "PageStatus": page_status,
-            "NumCompanies": num_companies
-        })
         return None
-    
+
     # Check for no data indicator
     if "No companies found" in response.text:
-        page_status = "Empty"
         logging.info(f"Valid page for event {event_id}, but no company data available.")
-        # result = f"Valid page for event {event_id}, but no company data available."
-        metadata_list.append({
-            "EventID": event_id,
-            "URL": url,
-            "IsActiveWebPage": is_active_web_page,
-            "IsInvalidEventID": is_invalid_event_id,
-            "StatusCode": status_code,
-            "Title": title,
-            "PageStatus": page_status,
-            "NumCompanies": num_companies
-        })
         return None
-    
+
     # Find the main table containing company data
     table = soup.find('table')
     if not table:
-        page_status = "Empty"
         logging.info(f"Valid page for event {event_id}, but no table found.")
-        # result = f"Valid page for event {event_id}, but no table found."
-        metadata_list.append({
-            "EventID": event_id,
-            "URL": url,
-            "IsActiveWebPage": is_active_web_page,
-            "IsInvalidEventID": is_invalid_event_id,
-            "StatusCode": status_code,
-            "Title": title,
-            "PageStatus": page_status,
-            "NumCompanies": num_companies
-        })
         return None
     
     # Get headers
@@ -287,25 +207,10 @@ def scrape_meetmax(event_id, metadata_list, current_time):
         companies.append((company, ticker))
     
     if not companies:
-        page_status = "Empty"
         logging.info(f"Valid page for event {event_id}, but no company data extracted from table.")
-        # result = f"Valid page for event {event_id}, but no company data extracted from table."
-        metadata_list.append({
-            "EventID": event_id,
-            "URL": url,
-            "IsActiveWebPage": is_active_web_page,
-            "IsInvalidEventID": is_invalid_event_id,
-            "StatusCode": status_code,
-            "Title": title,
-            "PageStatus": page_status,
-            "NumCompanies": num_companies
-        })
         return None
-    
-    page_status = "Active"
-    is_active_web_page = True
-    num_companies = len(companies)
-    # Use absolute path with timestamp
+
+    # Write company data to CSV
     csv_filename = str(FILE_WATCHER_DIR / f"MeetMaxEvent_{event_id}_{current_time}.csv")
     try:
         with open(csv_filename, 'w', newline='') as csvfile:
@@ -313,63 +218,19 @@ def scrape_meetmax(event_id, metadata_list, current_time):
             writer.writerow(['Company Name', 'Tickers'])
             for name, tickers in companies:
                 writer.writerow([name, tickers])
-        logging.info(f"Successfully wrote data for event {event_id} to {csv_filename}")
+        logging.info(f"Successfully wrote {len(companies)} companies for event {event_id} to {csv_filename}")
     except Exception as e:
         logging.error(f"Error writing CSV for event {event_id}: {str(e)}")
-        # result = f"Error writing CSV for event {event_id}: {str(e)}"
-        metadata_list.append({
-            "EventID": event_id,
-            "URL": url,
-            "IsActiveWebPage": is_active_web_page,
-            "IsInvalidEventID": is_invalid_event_id,
-            "StatusCode": status_code,
-            "Title": title,
-            "PageStatus": page_status,
-            "NumCompanies": num_companies
-        })
         return None
-    
-    # result = f"Companies for event {event_id} (written to {csv_filename}):\n"
-    # for name, tickers in companies:
-    #     result += f"- {name}: {tickers}\n"
-    
-    metadata_list.append({
-        "EventID": event_id,
-        "URL": url,
-        "IsActiveWebPage": is_active_web_page,
-        "IsInvalidEventID": is_invalid_event_id,
-        "StatusCode": status_code,
-        "Title": title,
-        "PageStatus": page_status,
-        "NumCompanies": num_companies
-    })
-    return None  # No printable result
+
+    return csv_filename
 
 logging.info("Starting meetmax_scrape_download.py script")
+logging.info(f"Processing {len(event_ids)} event IDs from database")
 
-metadata_list = []
+with ThreadPoolExecutor(max_workers=5) as executor:
+    results = list(executor.map(lambda eid: scrape_meetmax(eid, current_time), event_ids))
 
-with ThreadPoolExecutor(max_workers=5) as executor:  # Reduced from 5 to 2 to lower concurrency and ease rate limiting
-    results = list(executor.map(lambda eid: scrape_meetmax(eid, metadata_list, current_time), event_ids))
-    # Rate limiting: Sleep 1s between batches if needed; for larger ranges, add inside map or chunk
-
-# Removed printing of detailed results to avoid terminal flood
-# for result in results:
-#     if result:  # Only print if there's a result (e.g., errors)
-#         print(result)
-#         print("\n---\n")
-
-# Write metadata CSV (append mode for incremental runs)
-metadata_csv = str(FILE_WATCHER_DIR / f"MeetMaxURLScan_{current_time}.csv")
-try:
-    file_exists = os.path.isfile(metadata_csv)
-    with open(metadata_csv, 'a', newline='') as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=["EventID", "URL", "IsActiveWebPage", "IsInvalidEventID", "StatusCode", "Title", "PageStatus", "NumCompanies"])
-        if not file_exists:
-            writer.writeheader()
-        writer.writerows(metadata_list)
-    logging.info(f"Successfully wrote metadata to {metadata_csv}")
-except Exception as e:
-    logging.error(f"Error writing metadata CSV: {str(e)}")
-
+successful = sum(1 for r in results if r is not None)
+logging.info(f"Completed: {successful}/{len(event_ids)} events had company data written")
 logging.info("Completed meetmax_scrape_download.py script")

@@ -16,5 +16,7 @@
 15 0 * * 1-5 yostfundsadmin /home/yostfundsadmin/client_etl_workflow/jobscripts/meetmax_chain.sh
 # daily MM cancellations
 15 14 * * 1-5 yostfundsadmin /home/yostfundsadmin/client_etl_workflow/jobscripts/meetmax_daily_cancellations.sh
+# MeetMax URL scan - runs every Saturday at 1:00 AM to discover valid event IDs
+0 1 * * 6 yostfundsadmin /bin/bash /home/yostfundsadmin/client_etl_workflow/jobscripts/run_python_etl_script.sh meetmax_url_scan.py >> /home/yostfundsadmin/client_etl_workflow/logs/etl_cron.log 2>&1
 # Cron regression test - runs every 8 hours (midnight, 8 AM, 4 PM)
 0 0,8,16 * * * root /bin/bash /home/yostfundsadmin/client_etl_workflow/jobscripts/run_python_etl_script.sh cron_test.py >> /home/yostfundsadmin/client_etl_workflow/logs/etl_cron.log 2>&1
