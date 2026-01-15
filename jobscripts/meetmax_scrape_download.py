@@ -10,6 +10,8 @@ from datetime import datetime
 from systemscripts.user_utils import get_username
 from systemscripts.log_utils import log_message
 from systemscripts.directory_management import FILE_WATCHER_DIR, LOG_DIR, ensure_directory_exists
+from systemscripts.db_config import DB_PARAMS
+import psycopg2
 import requests
 from bs4 import BeautifulSoup
 import csv
@@ -35,8 +37,48 @@ logging.basicConfig(
 ensure_directory_exists(str(FILE_WATCHER_DIR))
 ensure_directory_exists(str(LOG_DIR))
 
-# Generate event IDs as a range
-event_ids = range(120000, 140000)
+
+def get_valid_event_ids():
+    """
+    Fetch valid event IDs from the database based on the most recent MeetMaxURLScan dataset.
+    Returns a list of event IDs that are valid and have active web pages.
+    """
+    query = """
+    SELECT t.eventid
+    FROM public.tmeetmaxurlscan t
+    LEFT JOIN public.tconferenceexception t2 ON t2.conferencename = t.eventid
+    WHERE UPPER(t.isinvalideventid) = 'FALSE'
+        AND UPPER(t.isactivewebpage) = 'TRUE'
+        AND t.datasetid = (
+            SELECT MAX(ds.datasetid)
+            FROM dba.tdataset ds
+            WHERE ds.label = 'MeetMaxURLScan'
+                AND ds.isactive = TRUE
+                AND ds.effthrudate = '9999-01-01 00:00:00'::timestamp
+        )
+        AND t2.conferencename IS NULL
+    ORDER BY t.eventid;
+    """
+    try:
+        conn = psycopg2.connect(**DB_PARAMS)
+        cursor = conn.cursor()
+        cursor.execute(query)
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        event_ids = [int(row[0]) for row in rows]
+        logging.info(f"Fetched {len(event_ids)} valid event IDs from database")
+        return event_ids
+    except Exception as e:
+        logging.error(f"Failed to fetch event IDs from database: {str(e)}")
+        return []
+
+
+# Fetch valid event IDs from database
+event_ids = get_valid_event_ids()
+if not event_ids:
+    logging.error("No valid event IDs found. Exiting.")
+    sys.exit(1)
 
 
 
