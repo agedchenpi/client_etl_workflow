@@ -33,6 +33,7 @@ snapshot_split AS (
     CROSS JOIN LATERAL regexp_matches(snapshot_base.ticker, '(\d+|[A-Za-z]+)', 'g') AS match
     WHERE match[1] != ''
     AND match[1] NOT IN (SELECT tickername FROM public.ttickerexceptions)
+    AND snapshot_base.event_name NOT IN (SELECT conferencename FROM public.tconferenceexception)
 ),
 incremental_base AS (
     SELECT
@@ -64,6 +65,7 @@ incremental_split AS (
     CROSS JOIN LATERAL regexp_matches(incremental_base.ticker, '(\d+|[A-Za-z]+)', 'g') AS match
     WHERE match[1] != ''
     AND match[1] NOT IN (SELECT UPPER(tickername) FROM public.ttickerexceptions)
+    AND incremental_base.event_name NOT IN (SELECT conferencename FROM public.tconferenceexception)
 ),
 dealogic_base AS (
     SELECT
@@ -102,6 +104,7 @@ dealogic_split AS (
     CROSS JOIN LATERAL regexp_matches(dealogic_base.ticker, '(\d+|[A-Za-z]+)', 'g') AS match
     WHERE match[1] != ''
     AND match[1] NOT IN (SELECT UPPER(tickername) FROM public.ttickerexceptions)
+    AND dealogic_base.event_name NOT IN (SELECT conferencename FROM public.tconferenceexception)
 ),
 unioned AS (
     SELECT * FROM snapshot_split
